@@ -6,6 +6,8 @@
 
 从短视频分享链接下载无水印视频，AI 自动提取语音文案。
 
+![WebUI 界面预览](douyin-video.png)
+
 <a href="https://glama.ai/mcp/servers/@yzfly/douyin-mcp-server">
   <img width="380" height="200" src="https://glama.ai/mcp/servers/@yzfly/douyin-mcp-server/badge" alt="douyin-mcp-server MCP server" />
 </a>
