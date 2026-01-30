@@ -187,13 +187,67 @@ class DouyinProcessor:
         except Exception as e:
             raise Exception(f"提取音频时出错: {str(e)}")
 
-    def extract_text_from_audio(self, audio_path: Path, show_progress: bool = True) -> str:
-        """从音频文件中提取文字"""
-        if not self.api_key:
-            raise ValueError("未设置 API 密钥，请设置环境变量 DOUYIN_API_KEY")
+    def get_audio_info(self, audio_path: Path) -> dict:
+        """获取音频文件信息（时长和大小）"""
+        try:
+            probe = ffmpeg.probe(str(audio_path))
+            duration = float(probe['format'].get('duration', 0))
+            size = audio_path.stat().st_size
+            return {'duration': duration, 'size': size}
+        except Exception:
+            return {'duration': 0, 'size': audio_path.stat().st_size}
+
+    def split_audio(self, audio_path: Path, segment_duration: int = 600, show_progress: bool = True) -> list:
+        """
+        将音频分割成多个片段
+
+        参数:
+            audio_path: 音频文件路径
+            segment_duration: 每段时长（秒），默认 10 分钟
+            show_progress: 是否显示进度
+
+        返回:
+            分割后的音频文件路径列表
+        """
+        audio_info = self.get_audio_info(audio_path)
+        duration = audio_info['duration']
+
+        if duration <= segment_duration:
+            return [audio_path]
+
+        segments = []
+        segment_index = 0
+        current_time = 0
 
         if show_progress:
-            print("正在识别语音...")
+            total_segments = int(duration / segment_duration) + 1
+            print(f"音频时长 {duration:.0f} 秒，将分割为 {total_segments} 段...")
+
+        while current_time < duration:
+            segment_path = self.temp_dir / f"segment_{segment_index}.mp3"
+
+            try:
+                (
+                    ffmpeg
+                    .input(str(audio_path), ss=current_time, t=segment_duration)
+                    .output(str(segment_path), acodec='libmp3lame', q=0)
+                    .run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
+                )
+                segments.append(segment_path)
+
+                if show_progress:
+                    print(f"  分割片段 {segment_index + 1}: {current_time:.0f}s - {min(current_time + segment_duration, duration):.0f}s")
+
+            except Exception as e:
+                raise Exception(f"分割音频片段 {segment_index} 时出错: {str(e)}")
+
+            current_time += segment_duration
+            segment_index += 1
+
+        return segments
+
+    def transcribe_single_audio(self, audio_path: Path) -> str:
+        """转录单个音频文件"""
         files = {
             'file': (audio_path.name, open(audio_path, 'rb'), 'audio/mpeg'),
             'model': (None, self.model)
@@ -207,7 +261,6 @@ class DouyinProcessor:
             response = requests.post(self.api_base_url, files=files, headers=headers)
             response.raise_for_status()
 
-            # 解析响应
             result = response.json()
             if 'text' in result:
                 return result['text']
@@ -218,6 +271,54 @@ class DouyinProcessor:
             raise Exception(f"提取文字时出错: {str(e)}")
         finally:
             files['file'][1].close()
+
+    def extract_text_from_audio(self, audio_path: Path, show_progress: bool = True) -> str:
+        """从音频文件中提取文字（支持大文件自动分段）"""
+        if not self.api_key:
+            raise ValueError("未设置 API 密钥，请设置环境变量 DOUYIN_API_KEY")
+
+        # 检查文件大小和时长
+        audio_info = self.get_audio_info(audio_path)
+        max_duration = 3600  # 1 小时
+        max_size = 50 * 1024 * 1024  # 50MB
+
+        # 判断是否需要分段
+        need_split = audio_info['duration'] > max_duration or audio_info['size'] > max_size
+
+        if not need_split:
+            # 文件在限制范围内，直接处理
+            if show_progress:
+                print("正在识别语音...")
+            return self.transcribe_single_audio(audio_path)
+
+        # 需要分段处理
+        if show_progress:
+            print(f"音频文件较大（时长: {audio_info['duration']:.0f}秒, 大小: {audio_info['size'] / 1024 / 1024:.1f}MB）")
+            print("将自动分段处理...")
+
+        # 分割音频
+        segments = self.split_audio(audio_path, segment_duration=540, show_progress=show_progress)  # 9分钟一段，留余量
+
+        # 逐段转录
+        all_texts = []
+        for i, segment_path in enumerate(segments):
+            if show_progress:
+                print(f"正在识别第 {i + 1}/{len(segments)} 段...")
+
+            text = self.transcribe_single_audio(segment_path)
+            all_texts.append(text)
+
+            # 清理分段文件
+            if segment_path != audio_path:
+                self.cleanup_files(segment_path)
+
+        # 合并文本
+        merged_text = ''.join(all_texts)
+
+        if show_progress:
+            print(f"语音识别完成，共处理 {len(segments)} 个片段")
+
+        return merged_text
 
     def cleanup_files(self, *file_paths: Path):
         """清理指定的文件"""
