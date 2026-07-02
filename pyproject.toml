@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "douyin-mcp-server"
-version = "1.4.0"
+version = "1.4.1"
 description = "MCP server for downloading Douyin videos and extracting text"
 readme = "README.md"
 license = {text = "MIT"}
@@ -27,6 +27,10 @@ dependencies = [
     "ffmpeg-python",
     "tqdm",
     "dashscope",
+]
+
+[project.optional-dependencies]
+web = [
     "fastapi",
     "uvicorn",
     "jinja2",

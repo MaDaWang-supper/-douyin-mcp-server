@@ -431,8 +431,8 @@
                                 </button>
                             </div>
 
-                            <a x-show="videoInfo?.download_url"
-                               :href="`/api/video/download?url=${encodeURIComponent(videoInfo?.download_url)}&filename=${encodeURIComponent(videoInfo?.video_id || 'video')}.mp4`"
+                            <a x-show="videoInfo?.video_id"
+                               :href="`/api/video/download?video_id=${encodeURIComponent(videoInfo?.video_id)}&filename=${encodeURIComponent(videoInfo?.video_id || 'video')}.mp4`"
                                class="flex items-center gap-3 p-3 bg-green-50 rounded-xl group hover:bg-green-100 transition-smooth cursor-pointer">
                                 <div class="w-10 h-10 bg-white rounded-lg flex items-center justify-center shadow-sm">
                                     <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

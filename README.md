@@ -112,6 +112,8 @@ uv run python web/app.py
 }
 ```
 
+> 💡 `API_KEY` 填写[硅基流动](https://cloud.siliconflow.cn/i/TxUlXG3u)的密钥。也兼容旧版配置：设置 `DASHSCOPE_API_KEY`（阿里云百炼密钥）同样可用，两者设其一即可。
+
 ### 可用工具
 
 | 工具名 | 功能 | 需要 API |
@@ -119,6 +121,8 @@ uv run python web/app.py
 | `parse_douyin_video_info` | 解析视频信息 | ❌ |
 | `get_douyin_download_link` | 获取下载链接 | ❌ |
 | `extract_douyin_text` | 提取视频文案 | ✅ |
+| `recognize_audio_file` | 识别本地音频文件 | ✅ (百炼) |
+| `recognize_audio_url` | 识别在线音频链接 | ✅ (百炼) |
 
 ### 对话示例
 
@@ -227,7 +231,15 @@ output/
 
 ## 📝 更新日志
 
-### v1.4.0 (最新)
+### v1.4.1 (最新)
+
+- 🔧 **MCP Server 修复** - `API_KEY` 现在正确对应硅基流动密钥，与文档一致；同时兼容旧版 `DASHSCOPE_API_KEY` 配置
+- ♻️ **恢复工具** - 恢复 `recognize_audio_file` / `recognize_audio_url` 工具及 `extract_douyin_text` 的 `context` 参数
+- 🛡️ **WebUI 安全加固** - 下载接口不再代理任意 URL，默认仅监听本机
+- ⚡ **WebUI 性能** - 提取文案不再阻塞其他请求
+- 📦 **依赖精简** - WebUI 依赖改为可选安装（`pip install "douyin-mcp-server[web]"`）
+
+### v1.4.0
 
 - 🌐 **WebUI** - 新增浏览器可视化界面
 - 🔑 **浏览器配置 API Key** - 无需环境变量

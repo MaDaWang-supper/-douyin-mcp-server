@@ -10,8 +10,11 @@
 """
 
 import os
+import re
 import sys
+import asyncio
 from pathlib import Path
+from urllib.parse import quote
 
 # 添加项目路径
 sys.path.insert(0, str(Path(__file__).parent.parent / "douyin-video" / "scripts"))
@@ -75,7 +78,7 @@ async def health_check():
 async def get_info(req: VideoRequest):
     """获取视频信息（无需 API_KEY）"""
     try:
-        info = get_video_info(req.url)
+        info = await asyncio.to_thread(get_video_info, req.url)
         return VideoInfoResponse(
             success=True,
             video_id=info["video_id"],
@@ -98,7 +101,9 @@ async def extract_transcript(req: VideoRequest):
         )
 
     try:
-        result = extract_text(req.url, api_key=api_key, show_progress=False)
+        result = await asyncio.to_thread(
+            extract_text, req.url, api_key=api_key, show_progress=False
+        )
         return ExtractResponse(
             success=True,
             video_id=result["video_info"]["video_id"],
@@ -110,15 +115,28 @@ async def extract_transcript(req: VideoRequest):
         return ExtractResponse(success=False, error=str(e))
 
 
+def _content_disposition(filename: str) -> str:
+    """构造安全的 Content-Disposition 头（ASCII 回退 + RFC 5987 编码）"""
+    ascii_name = re.sub(r'[^A-Za-z0-9._-]', '_', filename) or "video.mp4"
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(filename)}"
+
+
 @app.get("/api/video/download")
-async def download_video(url: str, filename: str = "video.mp4"):
-    """代理下载视频（解决跨域和请求头问题）"""
-    print(f"[Download] URL: {url}")
-    print(f"[Download] Filename: {filename}")
+async def download_video(video_id: str, filename: str = "video.mp4"):
+    """代理下载视频（解决跨域和请求头问题）
+
+    只接受抖音视频 ID，由服务端自行解析出 CDN 链接，避免代理任意 URL。
+    """
+    if not re.fullmatch(r'\d+', video_id):
+        raise HTTPException(status_code=400, detail="无效的视频 ID")
+
     try:
+        share_url = f"https://www.iesdouyin.com/share/video/{video_id}"
+        info = await asyncio.to_thread(get_video_info, share_url)
+
         # 完整的请求头，模拟浏览器访问
         download_headers = {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) EdgiOS/121.0.2277.107 Version/17.0 Mobile/15E148 Safari/604.1',
+            'User-Agent': HEADERS['User-Agent'],
             'Referer': 'https://www.douyin.com/',
             'Accept': '*/*',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
@@ -126,9 +144,9 @@ async def download_video(url: str, filename: str = "video.mp4"):
             'Connection': 'keep-alive',
         }
 
-        response = requests.get(url, headers=download_headers, stream=True, allow_redirects=True)
-        print(f"[Download] Response status: {response.status_code}")
-        print(f"[Download] Final URL: {response.url}")
+        response = await asyncio.to_thread(
+            requests.get, info["url"], headers=download_headers, stream=True, allow_redirects=True
+        )
         response.raise_for_status()
 
         content_length = response.headers.get("content-length", "")
@@ -139,7 +157,7 @@ async def download_video(url: str, filename: str = "video.mp4"):
                     yield chunk
 
         headers = {
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": _content_disposition(filename),
         }
         if content_length:
             headers["Content-Length"] = content_length
@@ -157,10 +175,11 @@ async def download_video(url: str, filename: str = "video.mp4"):
 
 def main():
     """启动服务"""
+    host = os.getenv("HOST", "127.0.0.1")
     port = int(os.getenv("PORT", "8080"))
     print(f"🚀 启动文案提取器 WebUI: http://localhost:{port}")
     print(f"📝 API_KEY 配置状态: {'已配置' if os.getenv('API_KEY') else '未配置'}")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host=host, port=port)
 
 
 if __name__ == "__main__":
