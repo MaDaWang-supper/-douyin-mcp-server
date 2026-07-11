@@ -6,6 +6,8 @@
     <title>文案提取器 - Transcript Extractor</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -53,6 +55,24 @@
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
         }
+
+        /* Markdown 渲染样式 */
+        .md-content h1 { font-size: 1.5em; font-weight: 700; margin: 1em 0 0.5em; color: #171717; }
+        .md-content h2 { font-size: 1.3em; font-weight: 600; margin: 1em 0 0.4em; color: #171717; padding-bottom: 0.3em; border-bottom: 1px solid #E5E5E6; }
+        .md-content h3 { font-size: 1.1em; font-weight: 600; margin: 0.8em 0 0.3em; color: #2F2F30; }
+        .md-content p { margin: 0.6em 0; line-height: 1.8; color: #2F2F30; }
+        .md-content ul, .md-content ol { margin: 0.5em 0; padding-left: 1.5em; }
+        .md-content li { margin: 0.3em 0; line-height: 1.7; color: #2F2F30; }
+        .md-content ul { list-style-type: disc; }
+        .md-content ol { list-style-type: decimal; }
+        .md-content strong { font-weight: 600; color: #171717; }
+        .md-content em { font-style: italic; }
+        .md-content blockquote { border-left: 3px solid #FE2C55; padding: 0.5em 1em; margin: 0.8em 0; background: #FFF5F7; border-radius: 0 8px 8px 0; }
+        .md-content blockquote p { margin: 0.2em 0; color: #4A4A4B; }
+        .md-content hr { border: none; border-top: 1px solid #E5E5E6; margin: 1em 0; }
+        .md-content code { background: #F1F1F2; padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.9em; font-family: ui-monospace, monospace; }
+        .md-content pre { background: #1F1F20; color: #E5E5E6; padding: 1em; border-radius: 8px; overflow-x: auto; margin: 0.8em 0; }
+        .md-content pre code { background: none; padding: 0; color: inherit; }
 
         /* Custom scrollbar */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -165,17 +185,18 @@
          @click.self="showSettings = false">
         <div x-show="showSettings" x-transition:enter="transition ease-out duration-200"
              x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
-             class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-fadeIn">
-            <div class="flex items-center justify-between mb-6">
+             class="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 animate-fadeIn max-h-[85vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-5">
                 <div class="flex items-center gap-3">
                     <div class="w-10 h-10 bg-gradient-douyin rounded-xl flex items-center justify-center">
                         <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
                         </svg>
                     </div>
                     <div>
-                        <h3 class="text-lg font-semibold text-douyin-gray-900">API 配置</h3>
-                        <p class="text-xs text-douyin-gray-400">配置硅基流动 API Key</p>
+                        <h3 class="text-lg font-semibold text-douyin-gray-900">配置中心</h3>
+                        <p class="text-xs text-douyin-gray-400">API 与模型设置</p>
                     </div>
                 </div>
                 <button @click="showSettings = false" class="w-8 h-8 rounded-full hover:bg-douyin-gray-100 flex items-center justify-center">
@@ -185,10 +206,24 @@
                 </button>
             </div>
 
-            <!-- API Key Input -->
-            <div class="space-y-4">
+            <!-- Tabs -->
+            <div class="flex border-b border-douyin-gray-200 mb-5">
+                <button @click="settingsTab = 'api'"
+                        class="flex-1 pb-3 text-sm font-medium border-b-2 transition-smooth"
+                        :class="settingsTab === 'api' ? 'border-douyin-red text-douyin-red' : 'border-transparent text-douyin-gray-400 hover:text-douyin-gray-600'">
+                    语音识别 API
+                </button>
+                <button @click="settingsTab = 'model'"
+                        class="flex-1 pb-3 text-sm font-medium border-b-2 transition-smooth"
+                        :class="settingsTab === 'model' ? 'border-douyin-red text-douyin-red' : 'border-transparent text-douyin-gray-400 hover:text-douyin-gray-600'">
+                    格式化模型
+                </button>
+            </div>
+
+            <!-- Tab: API Key -->
+            <div x-show="settingsTab === 'api'" class="space-y-4">
                 <div>
-                    <label class="block text-sm font-medium text-douyin-gray-700 mb-2">API Key</label>
+                    <label class="block text-sm font-medium text-douyin-gray-700 mb-2">硅基流动 API Key</label>
                     <div class="relative">
                         <input
                             :type="showApiKey ? 'text' : 'password'"
@@ -216,10 +251,9 @@
                             </button>
                         </div>
                     </div>
-                    <p class="mt-2 text-xs text-douyin-gray-400">API Key 仅保存在浏览器本地，不会上传到服务器</p>
+                    <p class="mt-2 text-xs text-douyin-gray-400">用于语音识别转文字，API Key 仅保存在浏览器本地</p>
                 </div>
 
-                <!-- Status Indicator -->
                 <div class="p-4 rounded-xl" :class="apiKeyInput ? 'bg-green-50 border border-green-100' : 'bg-douyin-gray-50'">
                     <div class="flex items-center gap-3">
                         <div class="w-10 h-10 rounded-lg flex items-center justify-center"
@@ -240,9 +274,8 @@
                     </div>
                 </div>
 
-                <!-- Actions -->
                 <div class="flex gap-3">
-                    <a href="https://cloud.siliconflow.cn/i/TxUlXG3u" target="_blank"
+                    <a href="https://cloud.siliconflow.cn" target="_blank"
                        class="flex-1 h-11 border border-douyin-gray-200 hover:bg-douyin-gray-50 text-douyin-gray-700 font-medium text-sm rounded-xl transition-smooth flex items-center justify-center gap-2">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
@@ -258,7 +291,6 @@
                     </button>
                 </div>
 
-                <!-- Clear Button -->
                 <button x-show="apiKey"
                         @click="clearApiKey"
                         class="w-full h-10 text-sm text-red-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-smooth flex items-center justify-center gap-2">
@@ -268,7 +300,116 @@
                     清除已保存的 API Key
                 </button>
             </div>
-        </div>
+
+            <!-- Tab: Model Config -->
+            <div x-show="settingsTab === 'model'" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-douyin-gray-700 mb-2">API 地址</label>
+                    <input
+                        x-model="modelConfig.api_base_url"
+                        placeholder="https://api.openai.com/v1/chat/completions"
+                        class="w-full px-4 py-3 text-sm border border-douyin-gray-200 rounded-xl focus-ring transition-smooth font-mono"
+                    >
+                    <p class="mt-1 text-xs text-douyin-gray-400">支持 OpenAI 兼容接口 (DeepSeek / 通义千问 / 智谱等)</p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-douyin-gray-700 mb-2">API Key</label>
+                    <div class="relative">
+                        <input
+                            :type="showModelPassword ? 'text' : 'password'"
+                            x-model="modelConfig.api_key"
+                            placeholder="sk-xxxxxxxxxxxxxxxx"
+                            class="w-full px-4 py-3 pr-20 text-sm border border-douyin-gray-200 rounded-xl focus-ring transition-smooth font-mono"
+                        >
+                        <div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                            <button @click="showModelPassword = !showModelPassword"
+                                    class="w-8 h-8 rounded-lg hover:bg-douyin-gray-100 flex items-center justify-center transition-smooth">
+                                <svg x-show="!showModelPassword" class="w-4 h-4 text-douyin-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                </svg>
+                                <svg x-show="showModelPassword" class="w-4 h-4 text-douyin-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-douyin-gray-700 mb-2">模型名称</label>
+                    <input
+                        x-model="modelConfig.model_name"
+                        placeholder="gpt-4o / deepseek-chat / qwen-turbo"
+                        class="w-full px-4 py-3 text-sm border border-douyin-gray-200 rounded-xl focus-ring transition-smooth"
+                    >
+                    <p class="mt-1 text-xs text-douyin-gray-400">填写实际使用的模型名称</p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-douyin-gray-700 mb-2">自定义提示词（可选）</label>
+                    <textarea
+                        x-model="modelConfig.prompt"
+                        placeholder="留空使用默认提示词（修正错别字、添加标点、分段整理）"
+                        rows="3"
+                        class="w-full px-4 py-3 text-sm border border-douyin-gray-200 rounded-xl resize-none focus-ring transition-smooth"
+                    ></textarea>
+                    <p class="mt-1 text-xs text-douyin-gray-400">使用 <code class="px-1 bg-douyin-gray-100 rounded">{text}</code> 作为原文案的占位符</p>
+                </div>
+
+                <div class="flex gap-3">
+                    <button @click="clearModelConfig"
+                            class="flex-1 h-11 border border-red-200 text-red-500 hover:bg-red-50 font-medium text-sm rounded-xl transition-smooth flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                        </svg>
+                        清除模型配置
+                    </button>
+                    <button @click="saveModelConfig"
+                            class="flex-1 h-11 bg-gradient-douyin hover:opacity-90 text-white font-medium text-sm rounded-xl transition-smooth flex items-center justify-center gap-2 shadow-lg shadow-douyin-red/20">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        保存模型配置
+                    </button>
+                </div>
+
+                <!-- 测试连接 -->
+                <div class="border-t border-douyin-gray-200 pt-4">
+                    <button @click="testModelConnection"
+                            :disabled="testingModel"
+                            class="w-full h-10 border border-douyin-gray-200 hover:bg-douyin-gray-50 text-douyin-gray-700 font-medium text-sm rounded-xl transition-smooth disabled:opacity-50 flex items-center justify-center gap-2">
+                        <svg x-show="!testingModel" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                        <svg x-show="testingModel" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        <span x-text="testingModel ? '测试中...' : '测试模型连接'"></span>
+                    </button>
+                    <!-- 测试结果 -->
+                    <div x-show="testResult" x-transition class="mt-3 p-3 rounded-xl text-xs"
+                         :class="testResult?.success ? 'bg-green-50 border border-green-100' : 'bg-red-50 border border-red-100'">
+                        <div class="flex items-start gap-2">
+                            <svg x-show="testResult?.success" class="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                            </svg>
+                            <svg x-show="!testResult?.success" class="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                            </svg>
+                            <div>
+                                <p class="font-medium" :class="testResult?.success ? 'text-green-700' : 'text-red-700'"
+                                   x-text="testResult?.success ? testResult.message : '连接失败'"></p>
+                                <p class="mt-1" :class="testResult?.success ? 'text-green-600' : 'text-red-600'"
+                                   x-text="testResult?.success ? ('模型回复: ' + testResult.response_text) : testResult.error"></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+         </div>
     </div>
 
     <!-- Help Modal -->
@@ -299,7 +440,7 @@
                     <p>「获取信息」无需 API，「提取文案」需要 API</p>
                 </div>
             </div>
-            <a href="https://cloud.siliconflow.cn/i/TxUlXG3u" target="_blank"
+            <a href="https://cloud.siliconflow.cn" target="_blank"
                class="mt-4 block w-full text-center py-2.5 bg-gradient-douyin text-white rounded-xl font-medium hover:opacity-90 transition-smooth">
                 获取免费 API Key
             </a>
@@ -322,7 +463,7 @@
                                 x-model="url"
                                 @keydown.meta.enter="extractText"
                                 @keydown.ctrl.enter="extractText"
-                                placeholder="粘贴分享链接或文本，例如：&#10;7.89 02/February/2025 xxx https://v.douyin.com/xxxxx/"
+                                placeholder="支持抖音 / B站 链接，例如：&#10;https://v.douyin.com/xxxxx/&#10;https://www.bilibili.com/video/BVxxxxx&#10;BVxxxxx（直接粘贴BV号）"
                                 rows="4"
                                 class="w-full px-4 py-3 text-sm border border-douyin-gray-200 rounded-xl resize-none focus-ring transition-smooth placeholder:text-douyin-gray-400"
                                 :disabled="loading"
@@ -337,6 +478,36 @@
                             </button>
                         </div>
                         <p class="mt-2 text-xs text-douyin-gray-400">提示：按 <kbd class="px-1.5 py-0.5 bg-douyin-gray-100 rounded text-douyin-gray-600">⌘</kbd> + <kbd class="px-1.5 py-0.5 bg-douyin-gray-100 rounded text-douyin-gray-600">Enter</kbd> 快速提取</p>
+                    </div>
+
+                    <!-- 输出方式切换 -->
+                    <div class="mb-4 p-3 bg-douyin-gray-50 rounded-xl">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-douyin-gray-700">输出方式</p>
+                                <p class="text-xs text-douyin-gray-400 mt-0.5">选择文案的输出格式</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button
+                                    @click="formatEnabled = false"
+                                    class="px-3 py-1.5 text-xs font-medium rounded-lg transition-smooth"
+                                    :class="!formatEnabled ? 'bg-douyin-gray-900 text-white' : 'bg-white text-douyin-gray-500 hover:bg-douyin-gray-100'">
+                                    直接输出
+                                </button>
+                                <button
+                                    @click="formatEnabled = true"
+                                    class="px-3 py-1.5 text-xs font-medium rounded-lg transition-smooth"
+                                    :class="formatEnabled ? 'bg-gradient-douyin text-white shadow' : 'bg-white text-douyin-gray-500 hover:bg-douyin-gray-100'">
+                                    格式化输出
+                                </button>
+                            </div>
+                        </div>
+                        <div x-show="formatEnabled" class="mt-3 pt-3 border-t border-douyin-gray-200">
+                            <p class="text-xs text-douyin-gray-400">
+                                <span x-show="modelConfig.api_base_url">模型: <span class="text-douyin-gray-600 font-medium" x-text="modelConfig.model_name"></span></span>
+                                <span x-show="!modelConfig.api_base_url" class="text-amber-600 cursor-pointer" @click="showSettings = true; settingsTab = 'model'">⚠ 未配置格式化模型，点击此处配置</span>
+                            </p>
+                        </div>
                     </div>
 
                     <!-- Action Buttons -->
@@ -514,7 +685,7 @@
                         </svg>
                     </div>
                     <h3 class="text-lg font-semibold text-douyin-gray-900 mb-2">等待提取</h3>
-                    <p class="text-sm text-douyin-gray-500 max-w-xs">粘贴分享链接，点击「提取文案」按钮，AI 将自动识别视频中的语音内容</p>
+                    <p class="text-sm text-douyin-gray-500 max-w-xs">粘贴抖音或B站分享链接，点击「提取文案」按钮，AI 将自动识别视频中的语音内容</p>
 
                     <!-- Feature Pills -->
                     <div class="flex flex-wrap justify-center gap-2 mt-6">
@@ -541,7 +712,18 @@
                         </div>
 
                         <div class="flex items-center gap-2">
-                            <span class="text-xs text-douyin-gray-400 mr-2" x-text="`${transcript?.length || 0} 字`"></span>
+                            <span class="text-xs text-douyin-gray-400 mr-2" x-text="`${(showFormatted ? formattedText : transcript)?.length || 0} 字`"></span>
+
+                            <!-- 格式化/原始 切换 -->
+                            <button x-show="formattedText"
+                                    @click="showFormatted = !showFormatted"
+                                    class="h-9 px-3 bg-blue-50 hover:bg-blue-100 rounded-lg text-xs font-medium text-blue-600 transition-smooth flex items-center gap-1.5"
+                                    :class="showFormatted ? 'bg-blue-100' : 'bg-blue-50'">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"/>
+                                </svg>
+                                <span x-text="showFormatted ? '查看原始' : '查看格式化'"></span>
+                            </button>
 
                             <button @click="copyTranscript"
                                     class="h-9 px-4 bg-douyin-gray-100 hover:bg-douyin-gray-200 rounded-lg text-sm font-medium text-douyin-gray-700 transition-smooth flex items-center gap-2">
@@ -566,7 +748,10 @@
 
                     <!-- Transcript Content -->
                     <div class="flex-1 overflow-y-auto p-6">
-                        <div class="prose prose-sm max-w-none">
+                        <!-- 格式化后的内容：渲染 Markdown -->
+                        <div x-show="showFormatted && formattedText" class="md-content prose prose-sm max-w-none" x-html="renderMarkdown(formattedText)"></div>
+                        <!-- 原始内容：纯文本显示 -->
+                        <div x-show="!showFormatted || !formattedText" class="prose prose-sm max-w-none">
                             <p class="text-douyin-gray-700 leading-relaxed whitespace-pre-wrap" x-text="transcript"></p>
                         </div>
                     </div>
@@ -605,14 +790,11 @@
     <!-- Footer -->
     <footer class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div class="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-douyin-gray-400">
-            <p>Made with <span class="text-douyin-red">♥</span> by <a href="https://github.com/yzfly" target="_blank" class="hover:text-douyin-red transition-colors">yzfly</a></p>
+            <p class="text-sm text-douyin-gray-400">短视频文案提取器</p>
             <div class="flex items-center gap-4">
-                <a href="https://github.com/yzfly/douyin-mcp-server" target="_blank" class="hover:text-douyin-red transition-colors flex items-center gap-1">
-                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-                    GitHub
-                </a>
+                <span class="text-sm text-douyin-gray-400">短视频文案提取器</span>
                 <span>·</span>
-                <span>v1.4.0</span>
+                <span>v1.4.1</span>
             </div>
         </div>
     </footer>
@@ -633,10 +815,24 @@
                 toast: '',
                 showHelp: false,
                 showSettings: false,
+                settingsTab: 'api',
                 showApiKey: false,
                 apiKey: '',
                 apiKeyInput: '',
                 serverApiKeyConfigured: false,
+                // 格式化模型配置
+                formatEnabled: false,
+                modelConfig: {
+                    api_base_url: '',
+                    api_key: '',
+                    model_name: 'gpt-4o',
+                    prompt: ''
+                },
+                showModelPassword: false,
+                formattedText: '',  // 格式化后的文本
+                showFormatted: false,  // 是否显示格式化后的文本
+                testingModel: false,
+                testResult: null,
 
                 get apiKeyConfigured() {
                     return this.serverApiKeyConfigured || !!this.apiKey;
@@ -648,6 +844,15 @@
                     if (savedKey) {
                         this.apiKey = savedKey;
                         this.apiKeyInput = savedKey;
+                    }
+
+                    // Load model config from localStorage
+                    const savedModelConfig = localStorage.getItem('douyin_model_config');
+                    if (savedModelConfig) {
+                        try {
+                            this.modelConfig = JSON.parse(savedModelConfig);
+                            this.formatEnabled = true;
+                        } catch (e) {}
                     }
 
                     try {
@@ -677,10 +882,52 @@
                     this.showToast('API Key 已清除');
                 },
 
+                saveModelConfig() {
+                    if (!this.modelConfig.api_base_url || !this.modelConfig.api_key) {
+                        this.showToast('请填写 API 地址和 API Key');
+                        return;
+                    }
+                    localStorage.setItem('douyin_model_config', JSON.stringify(this.modelConfig));
+                    this.formatEnabled = true;
+                    this.showToast('模型配置已保存');
+                },
+
+                clearModelConfig() {
+                    this.modelConfig = { api_base_url: '', api_key: '', model_name: 'gpt-4o', prompt: '' };
+                    this.formatEnabled = false;
+                    this.testResult = null;
+                    localStorage.removeItem('douyin_model_config');
+                    this.showToast('模型配置已清除');
+                },
+
+                async testModelConnection() {
+                    if (!this.modelConfig.api_base_url || !this.modelConfig.api_key) {
+                        this.testResult = { success: false, error: '请先填写 API 地址和 API Key' };
+                        return;
+                    }
+                    this.testingModel = true;
+                    this.testResult = null;
+                    try {
+                        const res = await fetch('/api/model/test', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ llm_config: this.modelConfig })
+                        });
+                        const data = await res.json();
+                        this.testResult = data;
+                    } catch (e) {
+                        this.testResult = { success: false, error: '网络错误，请检查 API 地址是否正确' };
+                    } finally {
+                        this.testingModel = false;
+                    }
+                },
+
                 resetState() {
                     this.error = '';
                     this.videoInfo = null;
                     this.transcript = '';
+                    this.formattedText = '';
+                    this.showFormatted = false;
                     this.step = 0;
                     this.extractingText = false;
                 },
@@ -688,6 +935,16 @@
                 showToast(message) {
                     this.toast = message;
                     setTimeout(() => this.toast = '', 2000);
+                },
+
+                renderMarkdown(text) {
+                    if (!text) return '';
+                    try {
+                        const html = marked.parse(text);
+                        return DOMPurify.sanitize(html);
+                    } catch (e) {
+                        return text;
+                    }
                 },
 
                 async copyToClipboard(text) {
@@ -736,6 +993,14 @@
                         return;
                     }
 
+                    // 如果启用了格式化输出，检查模型配置
+                    if (this.formatEnabled && !this.modelConfig.api_base_url) {
+                        this.showSettings = true;
+                        this.settingsTab = 'model';
+                        this.showToast('请先配置格式化模型');
+                        return;
+                    }
+
                     this.resetState();
                     this.loading = true;
                     this.extractingText = true;
@@ -748,13 +1013,17 @@
                     }, 2500);
 
                     try {
+                        const body = {
+                            url: this.url,
+                            api_key: this.apiKey,
+                            format_output: this.formatEnabled && !!this.modelConfig.api_base_url,
+                            llm_config: this.formatEnabled ? this.modelConfig : {}
+                        };
+
                         const res = await fetch('/api/video/extract', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                url: this.url,
-                                api_key: this.apiKey  // Send local API key if available
-                            })
+                            body: JSON.stringify(body)
                         });
                         const data = await res.json();
 
@@ -768,7 +1037,13 @@
                                 download_url: data.download_url
                             };
                             this.transcript = data.text;
+                            this.formattedText = data.formatted_text || '';
+                            this.showFormatted = this.formatEnabled && !!this.formattedText;
                             this.showToast('文案提取成功');
+                            if (data.error) {
+                                // 格式化失败但提取成功
+                                this.showToast(data.error);
+                            }
                         } else {
                             this.error = data.error || '提取文案失败';
                         }
@@ -782,7 +1057,8 @@
 
                 async copyTranscript() {
                     try {
-                        await navigator.clipboard.writeText(this.transcript);
+                        const text = this.showFormatted ? this.formattedText : this.transcript;
+                        await navigator.clipboard.writeText(text);
                         this.copied = true;
                         this.showToast('文案已复制到剪贴板');
                         setTimeout(() => this.copied = false, 2000);
@@ -792,7 +1068,8 @@
                 },
 
                 downloadTranscript() {
-                    const content = `# ${this.videoInfo?.title || '视频文案'}\n\n视频ID: ${this.videoInfo?.video_id || ''}\n\n---\n\n${this.transcript}`;
+                    const text = this.showFormatted ? this.formattedText : this.transcript;
+                    const content = `# ${this.videoInfo?.title || '视频文案'}\n\n视频ID: ${this.videoInfo?.video_id || ''}\n\n---\n\n${text}`;
                     const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');

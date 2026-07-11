@@ -29,9 +29,36 @@ import json
 import argparse
 import tempfile
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
+
+# FFmpeg 完整版路径探测
+# 优先使用完整版 FFmpeg（支持 libmp3lame 音频编码）
+# 如果找到完整版，设置 PATH 确保所有子进程都能用到
+_FFMPEG_FULL_DIR = None
+_FFMPEG_BIN = None
+_FFPROBE_BIN = None
+for _candidate in [
+    r'c:\Users\ASUS\.trae-cn\work\ffmpeg\ffmpeg-8.1.2-essentials_build\bin',
+    r'c:\ffmpeg\bin',
+    r'c:\tools\ffmpeg\bin',
+]:
+    if os.path.isdir(_candidate):
+        _fb = os.path.join(_candidate, 'ffmpeg.exe')
+        _fp = os.path.join(_candidate, 'ffprobe.exe')
+        if os.path.isfile(_fb):
+            _FFMPEG_FULL_DIR = _candidate
+            _FFMPEG_BIN = _fb
+            _FFPROBE_BIN = _fp if os.path.isfile(_fp) else None
+            os.environ['PATH'] = _candidate + os.pathsep + os.environ.get('PATH', '')
+            break
+
+
+def _ffmpeg_cmd():
+    """返回完整版 ffmpeg.exe 路径，用于 ffmpeg-python 的 cmd 参数"""
+    return _FFMPEG_BIN
 
 
 def check_dependencies():
@@ -179,7 +206,7 @@ class DouyinProcessor:
                 ffmpeg
                 .input(str(video_path))
                 .output(str(audio_path), acodec='libmp3lame', q=0)
-                .run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
+                .run(cmd=_ffmpeg_cmd(), capture_stdout=True, capture_stderr=True, overwrite_output=True)
             )
             if show_progress:
                 print(f"音频提取完成: {audio_path}")
@@ -231,7 +258,7 @@ class DouyinProcessor:
                     ffmpeg
                     .input(str(audio_path), ss=current_time, t=segment_duration)
                     .output(str(segment_path), acodec='libmp3lame', q=0)
-                    .run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
+                    .run(cmd=_ffmpeg_cmd(), capture_stdout=True, capture_stderr=True, overwrite_output=True)
                 )
                 segments.append(segment_path)
 
@@ -273,50 +300,64 @@ class DouyinProcessor:
             files['file'][1].close()
 
     def extract_text_from_audio(self, audio_path: Path, show_progress: bool = True) -> str:
-        """从音频文件中提取文字（支持大文件自动分段）"""
+        """从音频文件中提取文字（自动分段 + 并行转录）"""
         if not self.api_key:
             raise ValueError("未设置 API 密钥，请设置环境变量 API_KEY")
 
         # 检查文件大小和时长
         audio_info = self.get_audio_info(audio_path)
-        max_duration = 3600  # 1 小时
-        max_size = 50 * 1024 * 1024  # 50MB
+        max_duration = 600   # 10 分钟（降低阈值，更积极地分段以启用并行）
+        max_size = 20 * 1024 * 1024  # 20MB
 
         # 判断是否需要分段
         need_split = audio_info['duration'] > max_duration or audio_info['size'] > max_size
 
         if not need_split:
-            # 文件在限制范围内，直接处理
+            # 短音频直接处理（使用带重试的单段转录）
             if show_progress:
                 print("正在识别语音...")
-            return self.transcribe_single_audio(audio_path)
+            from transcriber import _transcribe_segment, TranscriptionProgress
+            progress = TranscriptionProgress(total=1)
+            result = _transcribe_segment(
+                0, audio_path, self.api_key, self.api_base_url,
+                self.model, max_retries=5, progress=progress,
+            )
+            if not result.success:
+                raise Exception(f"提取文字时出错: {result.error}")
+            return result.text
 
-        # 需要分段处理
+        # 分段 + 并行转录
         if show_progress:
             print(f"音频文件较大（时长: {audio_info['duration']:.0f}秒, 大小: {audio_info['size'] / 1024 / 1024:.1f}MB）")
-            print("将自动分段处理...")
+            print("将自动分段并行处理...")
 
-        # 分割音频
-        segments = self.split_audio(audio_path, segment_duration=540, show_progress=show_progress)  # 9分钟一段，留余量
+        # 分割音频（每段9分钟）
+        segments = self.split_audio(audio_path, segment_duration=540, show_progress=show_progress)
 
-        # 逐段转录
-        all_texts = []
-        for i, segment_path in enumerate(segments):
+        # 进度回调
+        def on_progress(p):
             if show_progress:
-                print(f"正在识别第 {i + 1}/{len(segments)} 段...")
+                print(f"\r语音识别进度: {p['completed']}/{p['total']} 段完成, {p['failed']} 段失败", end="", flush=True)
 
-            text = self.transcribe_single_audio(segment_path)
-            all_texts.append(text)
+        # 并行转录
+        from transcriber import transcribe_parallel
+        merged_text = transcribe_parallel(
+            segments=segments,
+            api_key=self.api_key,
+            api_base_url=self.api_base_url,
+            model=self.model,
+            max_workers=3,
+            max_retries=5,
+            on_progress=on_progress,
+        )
 
-            # 清理分段文件
-            if segment_path != audio_path:
-                self.cleanup_files(segment_path)
-
-        # 合并文本
-        merged_text = ''.join(all_texts)
+        # 清理分段文件
+        for seg in segments:
+            if seg != audio_path and seg.exists():
+                self.cleanup_files(seg)
 
         if show_progress:
-            print(f"语音识别完成，共处理 {len(segments)} 个片段")
+            print(f"\n语音识别完成，共处理 {len(segments)} 个片段（3并发）")
 
         return merged_text
 
@@ -413,6 +454,129 @@ def extract_text(share_link: str, api_key: Optional[str] = None, output_dir: Opt
     processor.cleanup_files(video_path, audio_path)
 
     return result
+
+
+def format_text_with_llm(
+    raw_text: str,
+    model_config: dict,
+    show_progress: bool = True
+) -> str:
+    """
+    使用自定义大模型对识别出的文案进行格式化整理
+
+    参数:
+        raw_text: 语音识别出的原始文本
+        model_config: 大模型配置，包含以下字段:
+            - api_base_url: API 地址 (如 https://api.openai.com/v1/chat/completions)
+            - api_key: API 密钥
+            - model_name: 模型名称 (如 gpt-4o, deepseek-chat, qwen-turbo 等)
+            - prompt: 自定义提示词 (可选，有默认值)
+        show_progress: 是否显示进度
+
+    返回:
+        str: 格式化后的文本
+    """
+    api_base_url = model_config.get("api_base_url", "")
+    api_key = model_config.get("api_key", "")
+    model_name = model_config.get("model_name", "gpt-4o")
+
+    if not api_base_url:
+        raise ValueError("未配置大模型 API 地址")
+    if not api_key:
+        raise ValueError("未配置大模型 API 密钥")
+
+    # 默认提示词（专为短视频口语化文案格式化设计）
+    default_prompt = (
+        "你是一位资深的内容编辑和文字润色专家。你的任务是将从短视频中提取的口语化语音识别文案，"
+        "转化为一篇结构清晰、语言规范、适合阅读传播的专业文章。\n\n"
+        "## 处理规则\n\n"
+        "### 1. 语言净化（必须执行）\n"
+        "- 删除所有语气词、填充词和冗余重复：'嗯''啊''哎''哎呀''那''呢''其实''相对来说''也是可以的'等\n"
+        "- 删除重复的词汇和句子：如'今天大家今天'等口误或重复表达\n"
+        "- 修正所有明显的错别字和形近字错误\n"
+        "- 修正专业术语错误，确保用词准确严谨\n"
+        "- 将口语化、随意的表达转化为书面语，保持专业度\n\n"
+        "### 2. 语句重构（必须执行）\n"
+        "- 修正病句和表意不通的句子，确保每句话逻辑清晰、语义完整\n"
+        "- 合并碎句和半截话，形成完整、连贯的长句\n"
+        "- 调整语序，使表达更加流畅自然\n"
+        "- 补充隐含的主语、宾语，让句子成分完整\n"
+        "- 删除前后矛盾的表述，修正不符合常识或常规的内容\n\n"
+        "### 3. 结构重组（必须执行）\n"
+        "- 根据内容主题进行合理分段，每个段落聚焦一个核心观点\n"
+        "- 为每个主要部分添加清晰的小标题（使用 Markdown 格式）\n"
+        "- 建立清晰的层级结构：大主题 → 子主题 → 具体要点\n"
+        "- 同类内容归并到一起，不要分散穿插\n"
+        "- 按逻辑顺序排列内容（如：总→分→总、时间线、重要性排序等）\n\n"
+        "### 4. 信息提炼（必须执行）\n"
+        "- 提炼每段的核心观点，删除冗余的解释和重复的内容\n"
+        "- 将零散的信息点整理为有条理的列表（使用序号或项目符号）\n"
+        "- 突出核心方法和关键结论，让读者一眼抓住重点\n"
+        "- 补充适当的过渡句，使段落之间衔接自然\n\n"
+        "### 5. 格式规范（必须执行）\n"
+        "- 正确使用标点符号，避免一逗到底或缺少标点\n"
+        "- 对关键概念、重点内容进行加粗（使用 Markdown **加粗**）\n"
+        "- 适当使用序号（1. 2. 3.）和层级标题（## ###）\n"
+        "- 在文章末尾添加简洁的总结和行动指引\n\n"
+        "## 输出要求\n"
+        "- 直接输出整理后的完整文本，不要添加任何解释、点评或元数据\n"
+        "- 不要输出'以下是整理后的内容'之类的过渡语\n"
+        "- 保持原文的核心信息和观点，不要删减重要内容\n"
+        "- 保持原文的语言风格倾向（如：干货科普、经验分享、教程指导等），但去除口语化痕迹\n\n"
+        "## 原始文案\n\n"
+        "{text}"
+    )
+
+    prompt_template = model_config.get("prompt", "") or default_prompt
+    prompt = prompt_template.format(text=raw_text)
+
+    if show_progress:
+        print("正在调用大模型格式化文案...")
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": "你是一个专业的文字编辑，擅长整理和格式化文本内容。"},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.3,
+        "max_tokens": 8192
+    }
+
+    try:
+        response = requests.post(
+            api_base_url,
+            headers=headers,
+            json=payload,
+            timeout=120
+        )
+        response.raise_for_status()
+
+        result = response.json()
+        formatted_text = result["choices"][0]["message"]["content"].strip()
+
+        if show_progress:
+            print("文案格式化完成")
+
+        return formatted_text
+
+    except requests.exceptions.Timeout:
+        raise Exception("调用大模型超时，请检查网络或模型配置")
+    except requests.exceptions.HTTPError as e:
+        status_code = e.response.status_code if hasattr(e, 'response') else 'unknown'
+        error_detail = ""
+        try:
+            error_detail = e.response.json()
+        except Exception:
+            error_detail = e.response.text[:500] if hasattr(e, 'response') else str(e)
+        raise Exception(f"调用大模型失败 (HTTP {status_code}): {error_detail}")
+    except Exception as e:
+        raise Exception(f"格式化文案时出错: {str(e)}")
 
 
 def main():

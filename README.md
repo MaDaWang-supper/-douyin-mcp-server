@@ -4,19 +4,18 @@
 [![Python version](https://img.shields.io/pypi/pyversions/douyin-mcp-server.svg)](https://pypi.org/project/douyin-mcp-server/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-从短视频分享链接下载无水印视频，AI 自动提取语音文案。
+从 **抖音 / B站** 视频分享链接下载音频，AI 自动提取语音文案。
 
-![WebUI 界面预览](douyin-video.png)
-
-<a href="https://glama.ai/mcp/servers/@yzfly/douyin-mcp-server">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/@yzfly/douyin-mcp-server/badge" alt="douyin-mcp-server MCP server" />
-</a>
+支持多平台视频解析、自动分段并行转录、Docker 一键部署。
 
 ## ✨ 功能特性
 
-- 🎬 **无水印视频** - 获取高质量无水印视频下载链接
+- 🎬 **多平台支持** - 同时支持抖音和 B站视频解析
 - 🎙️ **AI 语音识别** - 使用硅基流动 SenseVoice 自动提取文案
-- 📑 **大文件支持** - 自动分段处理超过 1 小时或 50MB 的音频
+- ⚡ **并行转录** - 3 并发分段转录，提速 2-3 倍
+- 🔄 **自动重试** - SSL/429 错误自动重试，无需手动干预
+- 📑 **大文件支持** - 超过 10 分钟自动分段处理
+- 🐳 **Docker 部署** - 一键部署到服务器，自带 FFmpeg
 - 🌐 **WebUI** - 现代化浏览器界面，无需命令行
 - 🔌 **MCP 集成** - 支持 Claude Desktop 等 AI 应用
 
@@ -26,25 +25,100 @@
 
 | 方式 | 适用场景 | 特点 |
 |------|----------|------|
-| [**WebUI**](#-webui-推荐) | 普通用户 | 浏览器操作，最简单 |
+| [**Docker**](#-docker-部署最简单) | 服务器/云部署 | 一键启动，自带 FFmpeg |
+| [**WebUI**](#-webui) | 本地使用 | 浏览器操作 |
 | [**MCP Server**](#-mcp-server) | Claude Desktop 用户 | AI 对话中直接调用 |
 | [**命令行**](#️-命令行工具) | 开发者 | 批量处理，脚本集成 |
 
 ---
 
-## 🌐 WebUI (推荐)
+## 🐳 Docker 部署（最简单）
 
-最简单的使用方式，打开浏览器即可使用。
+自带 Python + FFmpeg + yt-dlp，无需安装任何依赖。
+
+### Ubuntu 服务器部署步骤
+
+```bash
+# 1. 安装 Docker（如果还没装）
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+# 重新登录让 docker 组生效
+
+# 2. 克隆项目
+git clone https://github.com/<your-username>/douyin-mcp-server.git
+cd douyin-mcp-server
+
+# 3. 配置 API Key
+echo "API_KEY=sk-xxxxxxxxxxxxxxxx" > .env
+
+# 4. 构建并启动（后台运行）
+docker compose up -d --build
+
+# 5. 查看运行状态
+docker compose logs -f
+```
+
+打开浏览器访问 **http://服务器IP:8080**
+
+### 一行命令启动（已有 Docker 环境）
+
+```bash
+docker compose up -d --build
+```
+
+### 配置 API Key
+
+方式一：`.env` 文件（推荐）
+
+```bash
+echo "API_KEY=sk-xxxxxxxxxxxxxxxx" > .env
+```
+
+方式二：直接传入环境变量
+
+```bash
+API_KEY=sk-xxxxxxxxxxxxxxxx docker compose up -d --build
+```
+
+### 自定义端口
+
+```bash
+PORT=9000 docker compose up -d --build
+```
+
+访问 **http://服务器IP:9000**
+
+### 常用命令
+
+```bash
+# 查看日志
+docker compose logs -f
+
+# 停止服务
+docker compose down
+
+# 重新构建（代码更新后）
+docker compose up -d --build
+
+# 查看服务状态
+docker compose ps
+```
+
+---
+
+## 🌐 WebUI
+
+本地使用，浏览器操作。
 
 ### 快速开始
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/yzfly/douyin-mcp-server.git
+git clone https://github.com/<your-username>/douyin-mcp-server.git
 cd douyin-mcp-server
 
 # 2. 安装依赖
-uv sync
+uv sync --extra web
 
 # 3. 启动服务
 uv run python web/app.py
@@ -70,7 +144,7 @@ export API_KEY="sk-xxxxxxxxxxxxxxxx"
 uv run python web/app.py
 ```
 
-> 💡 获取免费 API Key：[硅基流动](https://cloud.siliconflow.cn/i/TxUlXG3u)（新用户有免费额度）
+> 💡 获取免费 API Key：[硅基流动](https://cloud.siliconflow.cn)（新用户有免费额度）
 
 ### 功能说明
 
@@ -112,7 +186,7 @@ uv run python web/app.py
 }
 ```
 
-> 💡 `API_KEY` 填写[硅基流动](https://cloud.siliconflow.cn/i/TxUlXG3u)的密钥。也兼容旧版配置：设置 `DASHSCOPE_API_KEY`（阿里云百炼密钥）同样可用，两者设其一即可。
+> 💡 `API_KEY` 填写[硅基流动](https://cloud.siliconflow.cn)的密钥。也兼容旧版配置：设置 `DASHSCOPE_API_KEY`（阿里云百炼密钥）同样可用，两者设其一即可。
 
 ### 可用工具
 
@@ -144,7 +218,7 @@ Claude：我来帮你提取视频文案...
 ### 安装
 
 ```bash
-git clone https://github.com/yzfly/douyin-mcp-server.git
+git clone https://github.com/<your-username>/douyin-mcp-server.git
 cd douyin-mcp-server
 uv sync
 ```
@@ -272,7 +346,3 @@ output/
 ## 📄 许可证
 
 Apache License 2.0
-
-## 👨‍💻 作者
-
-**yzfly** - [GitHub](https://github.com/yzfly) | [Email](mailto:yz.liu.me@gmail.com)

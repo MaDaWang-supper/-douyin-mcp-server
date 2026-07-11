@@ -22,6 +22,7 @@ wheels/
 
 # Virtual environments
 venv/
+.venv/
 env/
 ENV/
 
@@ -43,6 +44,9 @@ htmlcov/
 # Distribution
 *.tar.gz
 *.whl
+
+# Docker
+.dockerignore
 
 .claude
 temp/

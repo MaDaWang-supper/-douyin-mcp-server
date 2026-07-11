@@ -13,6 +13,7 @@ import os
 import re
 import sys
 import asyncio
+import shutil
 from pathlib import Path
 from urllib.parse import quote
 
@@ -26,10 +27,11 @@ from pydantic import BaseModel
 import uvicorn
 import requests
 
-# 导入抖音处理模块
-from douyin_downloader import get_video_info, extract_text, HEADERS
+# 导入视频处理模块（统一路由器，支持抖音+B站）
+from video_router import get_video_info, extract_text, detect_platform
+from douyin_downloader import format_text_with_llm, HEADERS
 
-app = FastAPI(title="抖音文案提取器", version="1.0.0")
+app = FastAPI(title="短视频文案提取器", version="2.0.0")
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 
 
@@ -37,6 +39,8 @@ class VideoRequest(BaseModel):
     """视频请求模型"""
     url: str
     api_key: str = ""  # 可选，从前端传入
+    format_output: bool = False  # 是否调用大模型格式化
+    llm_config: dict = {}  # 大模型配置（api_base_url, api_key, model_name, prompt）
 
 
 class VideoInfoResponse(BaseModel):
@@ -54,14 +58,28 @@ class ExtractResponse(BaseModel):
     video_id: str = ""
     title: str = ""
     text: str = ""
+    formatted_text: str = ""  # 格式化后的文本
     download_url: str = ""
+    error: str = ""
+
+
+class FormatRequest(BaseModel):
+    """格式化请求模型"""
+    text: str
+    llm_config: dict = {}
+
+
+class FormatResponse(BaseModel):
+    """格式化响应"""
+    success: bool
+    formatted_text: str = ""
     error: str = ""
 
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """主页面"""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html", {})
 
 
 @app.get("/api/health")
@@ -91,7 +109,7 @@ async def get_info(req: VideoRequest):
 
 @app.post("/api/video/extract", response_model=ExtractResponse)
 async def extract_transcript(req: VideoRequest):
-    """提取视频文案（需要 API_KEY）"""
+    """提取视频文案（需要 API_KEY），可选调用大模型格式化"""
     # 优先使用请求中的 API Key，其次使用环境变量
     api_key = req.api_key or os.getenv("API_KEY", "")
     if not api_key:
@@ -104,15 +122,89 @@ async def extract_transcript(req: VideoRequest):
         result = await asyncio.to_thread(
             extract_text, req.url, api_key=api_key, show_progress=False
         )
+        raw_text = result["text"]
+
+        # 如果需要格式化
+        formatted_text = ""
+        if req.format_output and req.llm_config:
+            try:
+                formatted_text = await asyncio.to_thread(
+                    format_text_with_llm, raw_text, req.llm_config, False
+                )
+            except Exception as e:
+                # 格式化失败不影响提取结果，返回原始文本并附带错误信息
+                return ExtractResponse(
+                    success=True,
+                    video_id=result["video_info"]["video_id"],
+                    title=result["video_info"]["title"],
+                    text=raw_text,
+                    formatted_text="",
+                    download_url=result["video_info"]["url"],
+                    error=f"文案提取成功，但格式化失败: {str(e)}"
+                )
+
         return ExtractResponse(
             success=True,
             video_id=result["video_info"]["video_id"],
             title=result["video_info"]["title"],
-            text=result["text"],
+            text=raw_text,
+            formatted_text=formatted_text,
             download_url=result["video_info"]["url"]
         )
     except Exception as e:
         return ExtractResponse(success=False, error=str(e))
+
+
+@app.post("/api/video/format", response_model=FormatResponse)
+async def format_transcript(req: FormatRequest):
+    """使用自定义大模型格式化文案"""
+    if not req.llm_config:
+        return FormatResponse(success=False, error="请先配置大模型参数")
+
+    try:
+        formatted_text = await asyncio.to_thread(
+            format_text_with_llm, req.text, req.llm_config, False
+        )
+        return FormatResponse(success=True, formatted_text=formatted_text)
+    except Exception as e:
+        return FormatResponse(success=False, error=str(e))
+
+
+class TestModelRequest(BaseModel):
+    """测试模型连接请求"""
+    llm_config: dict = {}
+
+
+class TestModelResponse(BaseModel):
+    """测试模型连接响应"""
+    success: bool
+    message: str = ""
+    response_text: str = ""
+    error: str = ""
+
+
+@app.post("/api/model/test", response_model=TestModelResponse)
+async def test_model(req: TestModelRequest):
+    """测试大模型连接是否正常"""
+    if not req.llm_config:
+        return TestModelResponse(success=False, error="请先配置大模型参数")
+
+    if not req.llm_config.get("api_base_url"):
+        return TestModelResponse(success=False, error="API 地址未填写")
+    if not req.llm_config.get("api_key"):
+        return TestModelResponse(success=False, error="API Key 未填写")
+
+    try:
+        result = await asyncio.to_thread(
+            format_text_with_llm, "这是一段测试文本，请回复'连接成功'四个字。", req.llm_config, False
+        )
+        return TestModelResponse(
+            success=True,
+            message="模型连接正常",
+            response_text=result[:200]
+        )
+    except Exception as e:
+        return TestModelResponse(success=False, error=str(e))
 
 
 def _content_disposition(filename: str) -> str:
@@ -125,48 +217,103 @@ def _content_disposition(filename: str) -> str:
 async def download_video(video_id: str, filename: str = "video.mp4"):
     """代理下载视频（解决跨域和请求头问题）
 
-    只接受抖音视频 ID，由服务端自行解析出 CDN 链接，避免代理任意 URL。
+    支持抖音视频ID和B站视频ID。
     """
-    if not re.fullmatch(r'\d+', video_id):
-        raise HTTPException(status_code=400, detail="无效的视频 ID")
-
     try:
-        share_url = f"https://www.iesdouyin.com/share/video/{video_id}"
-        info = await asyncio.to_thread(get_video_info, share_url)
+        platform = detect_platform(video_id)
 
-        # 完整的请求头，模拟浏览器访问
-        download_headers = {
-            'User-Agent': HEADERS['User-Agent'],
-            'Referer': 'https://www.douyin.com/',
-            'Accept': '*/*',
-            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'Accept-Encoding': 'identity',
-            'Connection': 'keep-alive',
-        }
+        if platform == 'bilibili':
+            # B站视频：使用 yt-dlp 获取下载链接
+            from bilibili_downloader import download_bilibili_audio
+            import tempfile
+            import subprocess
 
-        response = await asyncio.to_thread(
-            requests.get, info["url"], headers=download_headers, stream=True, allow_redirects=True
-        )
-        response.raise_for_status()
+            bili_url = f"https://www.bilibili.com/video/{video_id}"
+            temp_dir = tempfile.mkdtemp(prefix='bilibili_dl_')
 
-        content_length = response.headers.get("content-length", "")
+            try:
+                import yt_dlp
 
-        def iter_content():
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    yield chunk
+                ydl_opts = {
+                    'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                    'outtmpl': str(Path(temp_dir) / 'video.%(ext)s'),
+                    'quiet': True,
+                    'no_warnings': True,
+                    'http_headers': {
+                        'User-Agent': HEADERS['User-Agent'],
+                        'Referer': 'https://www.bilibili.com/',
+                    },
+                }
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(bili_url, download=True)
+                    video_path = Path(ydl.prepare_filename(info))
+                    if not video_path.exists():
+                        for f in Path(temp_dir).iterdir():
+                            if f.suffix in ('.mp4', '.flv', '.mkv'):
+                                video_path = f
+                                break
 
-        headers = {
-            "Content-Disposition": _content_disposition(filename),
-        }
-        if content_length:
-            headers["Content-Length"] = content_length
+                def iter_file():
+                    with open(video_path, 'rb') as f:
+                        for chunk in iter(lambda: f.read(8192), b''):
+                            yield chunk
 
-        return StreamingResponse(
-            iter_content(),
-            media_type="video/mp4",
-            headers=headers
-        )
+                content_length = video_path.stat().st_size
+
+                headers = {
+                    "Content-Disposition": _content_disposition(filename),
+                }
+                if content_length:
+                    headers["Content-Length"] = str(content_length)
+
+                return StreamingResponse(
+                    iter_file(),
+                    media_type="video/mp4",
+                    headers=headers
+                )
+            finally:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+
+        else:
+            # 抖音视频：原有逻辑
+            if not re.fullmatch(r'\d+', video_id):
+                raise HTTPException(status_code=400, detail="无效的视频 ID")
+
+            share_url = f"https://www.iesdouyin.com/share/video/{video_id}"
+            info = await asyncio.to_thread(get_video_info, share_url)
+
+            download_headers = {
+                'User-Agent': HEADERS['User-Agent'],
+                'Referer': 'https://www.douyin.com/',
+                'Accept': '*/*',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                'Accept-Encoding': 'identity',
+                'Connection': 'keep-alive',
+            }
+
+            response = await asyncio.to_thread(
+                requests.get, info["url"], headers=download_headers, stream=True, allow_redirects=True
+            )
+            response.raise_for_status()
+
+            content_length = response.headers.get("content-length", "")
+
+            def iter_content():
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        yield chunk
+
+            headers = {
+                "Content-Disposition": _content_disposition(filename),
+            }
+            if content_length:
+                headers["Content-Length"] = content_length
+
+            return StreamingResponse(
+                iter_content(),
+                media_type="video/mp4",
+                headers=headers
+            )
     except requests.exceptions.HTTPError as e:
         raise HTTPException(status_code=e.response.status_code, detail=f"下载失败: {e.response.status_code}")
     except Exception as e:
