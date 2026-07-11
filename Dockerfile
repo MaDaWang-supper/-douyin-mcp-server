@@ -41,14 +41,12 @@ COPY douyin-video/ douyin-video/
 COPY web/ web/
 COPY pyproject.toml .
 
+# API Key 通过环境变量或 docker-compose 传入
 # 设置环境变量
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     HOST=0.0.0.0 \
-    PORT=8080 \
-    # API Key 通过环境变量或 docker-compose 传入
-    # API_KEY= \
-    # DASHSCOPE_API_KEY=
+    PORT=8080
 
 EXPOSE 8080
 
