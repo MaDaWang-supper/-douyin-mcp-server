@@ -50,9 +50,9 @@ ENV PATH="/app/.venv/bin:$PATH" \
 
 EXPOSE 8080
 
-# 健康检查：等待服务启动后检测 /api/health
+# 健康检查：用 $PORT 环境变量适配云平台动态端口（本地默认 8080）
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8080/api/health || exit 1
+    CMD curl -f http://localhost:${PORT:-8080}/api/health || exit 1
 
 # 启动 WebUI
 CMD ["python", "web/app.py"]

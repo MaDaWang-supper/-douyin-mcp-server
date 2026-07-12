@@ -1,0 +1,22 @@
+# Render 部署配置文件
+# 文档: https://render.com/docs/blueprint-spec
+# 使用方式: 在 Render Dashboard 创建新服务时选择 "From Blueprint" 并关联此文件
+
+services:
+  - type: web
+    name: douyin-mcp-server
+    env: docker
+    plan: free  # 免费档: 512MB RAM, 15分钟无请求后休眠
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true  # 推送到 main/master 时自动重新部署
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      # 语音识别 API Key（硅基流动），在 Render 面板手动填写
+      # 不填也可以用：用户在前端页面手动输入 API Key
+      - key: API_KEY
+        sync: false
+      # 备选：阿里云百炼 DashScope API Key
+      - key: DASHSCOPE_API_KEY
+        sync: false
